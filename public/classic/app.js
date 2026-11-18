@@ -1,0 +1,128 @@
+'use strict';
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const icons={game:'M6 7h12l4 10-3 3-4-4H9l-4 4-3-3z M6 11v5 M3.5 13.5h5 M16 11h.1 M19 14h.1',home:'M3 11 12 3l9 8v9a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z',learn:'M3 4h7a3 3 0 0 1 2 1 3 3 0 0 1 2-1h7v15h-7a3 3 0 0 0-2 1 3 3 0 0 0-2-1H3z M12 5v15',phrase:'M4 4h16v12H9l-5 4z M8 8h8 M8 12h5',review:'M4 8a8 8 0 1 1-1 7 M4 3v5h5 M12 8v5l3 2',progress:'M4 20V10 M10 20V4 M16 20v-7 M22 20H2',award:'m12 3 3 5 6 1-4 5 1 6-6-3-6 3 1-6-4-5 6-1z',user:'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M4 21v-2a8 6 0 0 1 16 0v2',users:'M9 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M2 21v-2a7 6 0 0 1 14 0v2 M17 4a4 4 0 0 1 0 8 M18 16a5 4 0 0 1 4 5',settings:'M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6',arrow:'M4 12h16 M14 6l6 6-6 6',audio:'M11 5 6 9H3v6h3l5 4z M15 8a6 6 0 0 1 0 8 M18 5a10 10 0 0 1 0 14',check:'m5 12 4 4L19 6',file:'M6 3h9l4 4v14H6z M14 3v5h5 M9 12h7 M9 16h7',logout:'M9 4H4v16h5 M8 12h13 M16 7l5 5-5 5',plus:'M12 4v16 M4 12h16',back:'M20 12H4 M10 6l-6 6 6 6'};
+const icon=n=>`<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="${icons[n]||icons.file}"/></svg>`;
+const btn=(text,action,cls='',attrs='')=>`<button class="btn ${cls}" data-action="${action}" ${attrs}>${text}</button>`;
+const pill=(text,cls='')=>`<span class="pill ${cls}">${esc(text)}</span>`;
+const progress=(n)=>`<div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(Math.max(0,Math.min(100,n)))}" aria-label="${Math.round(Math.max(0,Math.min(100,n)))}% complete"><span style="width:${Math.max(0,Math.min(100,n))}%"></span></div>`;
+const today=()=>new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kuala_Lumpur'});
+const dayAgo=n=>{let d=new Date();d.setDate(d.getDate()-n);return d.toLocaleDateString('en-CA',{timeZone:'Asia/Kuala_Lumpur'})};
+let state;try{state=JSON.parse(localStorage.getItem('malaymate-w3-v1'))||seed()}catch{state=seed()}
+state.extraQuestions??={};state.removedQuestions??=[];
+initializeFrontendState();
+const save=()=>{captureLearner();localStorage.setItem('malaymate-w3-v1',JSON.stringify(state));};
+let role=new URLSearchParams(location.search).get('role')||sessionStorage.getItem('mm-role')||'student',view=new URLSearchParams(location.search).get('view')||'welcome',selectedModule='food',selectedLesson='food-0',lessonTab=0,flash=0,flipped=false,tokens=[],quiz=null,result=null,filterLevel='All levels',phraseCategory='All categories',searchPhrase='',direction='both',contentTab='Modules',authTab='login',feedbackRating=4;
+const persistRole=()=>sessionStorage.setItem('mm-role',role);
+const xp=()=>state.events.reduce((a,b)=>a+b.xp,0);
+function streak(){let n=0,d=new Date();let t=today();if(!state.days.includes(t))d.setDate(d.getDate()-1);for(let i=0;i<366;i++){let key=d.toLocaleDateString('en-CA',{timeZone:'Asia/Kuala_Lumpur'});if(!state.days.includes(key))break;n++;d.setDate(d.getDate()-1)}return n}
+function award(key,value,label){
+ if(state.events.some(e=>e.key===key))return false;
+ state.events.push({key,xp:Number(value),label,date:today()});
+ if(!state.days.includes(today()))state.days.push(today());
+ state.longest=Math.max(state.longest,streak());
+ syncBadges();save();return true;
+}
+const mod=id=>state.modules.find(m=>m.id===id)||state.modules[0];
+const lesson=id=>state.lessons.find(l=>l.id===id)||state.lessons[0];
+const visibleModules=()=>state.modules.filter(m=>m.status==='Published'&&state.levels.some(l=>l.id===m.level&&l.status==='Published')).sort((a,b)=>a.order-b.order);
+const visibleLessons=m=>state.lessons.filter(l=>l.moduleId===m&&l.status==='Published').sort((a,b)=>a.order-b.order);
+const modulePct=id=>{let ls=visibleLessons(id);return ls.length?Math.round(ls.filter(l=>state.completed.includes(l.id)).length/ls.length*100):0};
+const allVisible=()=>visibleModules().flatMap(m=>visibleLessons(m.id));
+const allPct=()=>allVisible().length?Math.round(allVisible().filter(l=>state.completed.includes(l.id)).length/allVisible().length*100):0;
+const average=()=>state.attempts.length?Math.round(state.attempts.reduce((a,b)=>a+b.score,0)/state.attempts.length):0;
+const latestFor=id=>state.attempts.filter(a=>a.moduleId===id&&a.type!=='Placement').slice(-1)[0];
+const mastery=id=>latestFor(id)?.score||0;
+function recommendations(){if(state.scenario==='cold')return [];return visibleModules().map(m=>{let a=latestFor(m.id);return a&&a.score<state.config.pass?{module:m,attempt:a,priority:a.score<50?'High':'Medium',reason:`Your latest ${m.title.toLowerCase()} score was ${a.score}%. Practise the phrases you missed before trying again.`,status:'Pending'}:null}).filter(Boolean).sort((a,b)=>a.attempt.score-b.attempt.score)}
+function toast(s){$('#toast').textContent=s;$('#toast').style.display='block';clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>$('#toast').style.display='none',4200)}
+function navigate(v){if(activeGame&&v!=='game'){confirmLeaveGame(v);return;}stopAudio();if(quiz&&v!=='quiz'&&v!=='result'){openModal('Leave this assessment?',`<p>Your unsubmitted answers will be discarded.</p><div class="actions">${btn('Keep working','close','secondary')}${btn('Leave assessment','leave:'+v)}</div>`);return}view=v;window.scrollTo(0,0);render();$('#main')?.focus({preventScroll:true})}
+function goLesson(id){selectedLesson=id;selectedModule=lesson(id).moduleId;lessonTab=state.lessonSteps[id]?.tab||0;flash=0;flipped=false;tokens=[];state.access[id]=new Date().toISOString();save();view='lesson';render();window.scrollTo(0,0)}
+function render(){if(role==='guest'&&!['auth','welcome','games','game','gameResult'].includes(view))view='auth';let adminViews=['users','content','assessments','analytics','ml','adminfeedback','settings'];if(role!=='admin'&&adminViews.includes(view)){view='dashboard';toast('Sign in as an administrator to open this page.')}let body=({welcome:welcomeView,onboarding:onboardingView,games:gamesView,game:gameView,gameResult:gameResultView,dashboard,modules:modulesView,module:moduleView,lesson:lessonView,phrasebook,reviews:reviewsView,progress:progressView,achievements:achievementsView,profile:profileView,feedback:feedbackView,users:usersView,content:contentView,assessments:assessmentView,analytics:analyticsView,ml:mlView,adminfeedback:adminFeedback,settings:settingsView,auth:authView,placement:placementView,quiz:quizView,result:resultView}[view]||dashboard)();$('#app').innerHTML=view==='welcome'?body:shell(plainCopy(body));syncNavigation();if(view==='lesson'){let s=state.lessonSteps[selectedLesson]||{tab:0,visited:[]};if(lessonTab<3&&!s.visited.includes(lessonTab))s.visited.push(lessonTab);s.tab=lessonTab;state.lessonSteps[selectedLesson]=s;save()}document.title=title()+' | AIU MalayMate';if(new URLSearchParams(location.search).has('embed')){setTimeout(()=>parent.postMessage({type:'malaymate-height',height:document.body.scrollHeight,role,view},location.origin),100)}}
+function syncNavigation(){let sidebar=$('.sidebar');if(!sidebar)return;let mobile=window.matchMedia?.('(max-width:820px)').matches||false;sidebar.inert=mobile&&!sidebar.classList.contains('open');$('.mobile-toggle')?.setAttribute('aria-expanded',String(sidebar.classList.contains('open')));}
+window.addEventListener?.('resize',syncNavigation);
+function openModal(t,body){$('#modal').innerHTML=`<section class="modal-box" role="dialog" aria-modal="true" aria-label="${esc(t.replace(/<[^>]*>/g,''))}"><div class="modal-title"><h2>${t}</h2><button class="close" aria-label="Close dialog" data-action="close">×</button></div>${body}</section>`;$('#modal').hidden=false;window.lastFocus=document.activeElement;setTimeout(()=>$('#modal').querySelector('input,button,select,textarea')?.focus(),0)}
+function closeModal(){$('#modal').hidden=true;$('#modal').innerHTML='';window.lastFocus?.focus()}
+let currentAudio=null;
+function speak(text,src=''){stopAudio();if(src){currentAudio=new Audio(src);currentAudio.play().catch(()=>toast('Audio could not play. Try the recording again or read the transcript.'));return}if(!('speechSynthesis'in window)){toast('Audio is unavailable in this browser. Use the visible transcript.');return}let voices=speechSynthesis.getVoices(),voice=voices.find(v=>v.lang.toLowerCase().startsWith('ms'));if(!voice){toast('Audio is not available on this device. You can read the Malay words and English meaning instead.');return}let u=new SpeechSynthesisUtterance(text);u.lang='ms-MY';u.voice=voice;u.rate=Number($('#audio-speed')?.value||.85);speechSynthesis.speak(u)}
+function stopAudio(){if(currentAudio){currentAudio.pause();currentAudio.currentTime=0;currentAudio=null}window.speechSynthesis?.cancel()}
+function download(filename,text,type='text/html'){let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000)}
+function exportAnalytics(){let as=filteredAttempts();const q=v=>'"'+String(v??'').replaceAll('"','""')+'"';let rows=[['Student','Attempt ID','Assessment type','Module','Score percent','Points','Total','Start','Complete','Responses'],...as.map(a=>[(state.users.find(u=>u.id===($('#analytics-student')?.value||state.activeStudentId))?.name||state.profile.name),a.id,a.type,mod(a.moduleId).title,a.score,a.correct,a.total,a.start,a.end,a.responses.length])];download('MalayMate_sample_analytics.csv',rows.map(r=>r.map(q).join(',')).join('\r\n'),'text/csv');toast('Filtered sample report downloaded.')}
+async function act(action){if(action.startsWith('game-')){handleGameAction(action);return;}let [a,...parts]=action.split(':'),p=parts[0],p2=parts[1],p3=parts[2];switch(a){
+case 'nav':navigate(p);break;
+case 'start-learning':role='student';persistRole();view='onboarding';render();window.scrollTo(0,0);break;
+case 'first-lesson':state.onboardingDone=true;save();goLesson(visibleLessons('greetings')[0]?.id||allVisible()[0]?.id);break;
+case 'find-level':state.onboardingDone=true;save();navigate('placement');break;
+case 'show-help':showHelp();break;
+case 'welcome-topic':role='student';persistRole();selectedModule=p;navigate('module');break;
+case 'show-welcome':navigate('welcome');break;
+case 'welcome-auth':authTab=p||'login';view='auth';render();break;
+case 'install-app':installMalayMate();break;
+case 'claim-quest':claimQuest(p);break;
+case 'badge-detail':showBadge(p);break;
+case 'badge-continue':closeModal();navigate('modules');break;
+case 'open-badges':contentTab='Badges';navigate('content');break;
+case 'set-goal':state.dailyGoal=Number(p);save();render();toast('Daily goal updated.');break;
+case 'menu':$('.sidebar').classList.toggle('open');syncNavigation();break;
+case 'close':closeModal();break;
+case 'switch':if(activeGame){toast('Finish or leave your game before switching views.');return;}if(quiz){toast('Submit or leave the active assessment before switching roles.');return}role=p;persistRole();view='dashboard';closeModal();render();window.scrollTo(0,0);toast(p==='admin'?'Admin preview opened.':'Student preview opened.');break;
+case 'logout':quiz=null;activeGame=null;role='guest';persistRole();view='welcome';render();toast('Demo session ended. Sign in to continue.');break;
+case 'leave':quiz=null;closeModal();view=p;render();break;
+case 'module':selectedModule=p;navigate('module');break;
+case 'lesson':if(!allVisible().some(l=>l.id===p)){toast('This lesson is not available yet. Please choose another lesson.');return}goLesson(p);break;
+case 'level-filter':filterLevel=parts.join(':');render();break;
+case 'lesson-tab':lessonTab=Number(p);tokens=[];render();if(lessonTab===3&&state.config.complete==='Activities only'&&state.lessonSteps[selectedLesson]?.visited.length===3){if(!state.completed.includes(selectedLesson))state.completed.push(selectedLesson);award('lesson:'+selectedLesson,state.config.lessonXP,lesson(selectedLesson).title+' completed');save();toast('Lesson completed. Its completion XP is awarded only once.')}break;
+case 'flip':flipped=!flipped;render();break;
+case 'flash-next':flash=(flash+1)%state.phrases.filter(p=>p.moduleId===selectedModule&&p.status==='Published').length;flipped=false;render();break;
+case 'flash-prev':{let n=state.phrases.filter(p=>p.moduleId===selectedModule&&p.status==='Published').length;flash=(flash-1+n)%n;flipped=false;render();break}
+case 'token':{let words=lessonTarget().malay.split(' ');if(!tokens.some(t=>t.index===Number(p)))tokens.push({index:Number(p),text:words[Number(p)]});render();break}
+case 'remove-token':tokens.splice(Number(p),1);render();break;
+case 'clear-sentence':tokens=[];render();break;
+case 'check-sentence':{let target=lessonTarget().malay;let ok=tokens.map(t=>t.text).join(' ')===target;$('#sentence-feedback').innerHTML=`<div class="callout ${ok?'':'warning'}">${ok?'✓ Nicely done. You’ve built a useful phrase.':'Not quite yet. Try another order, or revisit the vocabulary card.'}</div>`;break}
+case 'speak':speak(parts.join(':'));break;
+case 'phrase-audio':{let ph=state.phrases.find(x=>x.id===p);speak(ph.malay,ph.audio);break}
+case 'pause-audio':if(currentAudio){if(currentAudio.paused)currentAudio.play();else currentAudio.pause()}else if(window.speechSynthesis){if(speechSynthesis.paused)speechSynthesis.resume();else speechSynthesis.pause()}break;
+case 'stop-audio':stopAudio();break;
+case 'start-quiz':startQuiz(p,'Quiz');break;
+case 'start-practice':startQuiz(p,'Practice');break;
+case 'start-review':startQuiz(p,'Review');break;
+case 'start-lesson-quiz':startQuiz(lesson(p).moduleId,'Quiz',p);break;
+case 'begin':startQuiz('greetings','Placement');break;
+case 'quiz-go':recordQuestionTime();quiz.index=Number(p);quiz.questionStart=Date.now();render();break;
+case 'answer':quiz.answers[quiz.questions[quiz.index].id]=Number(p);render();break;
+case 'quiz-token':{let q=quiz.questions[quiz.index];quiz.answers[q.id]||=[];if(!quiz.answers[q.id].includes(Number(p)))quiz.answers[q.id].push(Number(p));render();break}
+case 'quiz-token-remove':quiz.answers[quiz.questions[quiz.index].id].splice(Number(p),1);render();break;
+case 'confirm-submit':{let missing=quiz.questions.filter(q=>{let a=quiz.answers[q.id];return a===undefined||String(a).trim()===''||Array.isArray(a)&&a.length!==q.words.length});if(missing.length){openModal('A little more to answer',`<p>You have ${missing.length} unanswered or incomplete question${missing.length===1?'':'s'}. Answer every question before submitting.</p><div class="actions">${btn('Go to first missing question','missing:'+quiz.questions.indexOf(missing[0]))}</div>`)}else openModal('Ready to submit?',`<p>You’ve answered all ${quiz.questions.length} questions. Your score and answers will be saved when you finish.</p><div class="actions">${btn('Keep checking','close','secondary')}${btn('Submit answers','submit-quiz')}</div>`);break}
+case 'missing':closeModal();recordQuestionTime();quiz.index=Number(p);render();break;
+case 'submit-quiz':submitQuiz();break;
+case 'attempt':{closeModal();let at=Object.values(state.learnerStore).flatMap(x=>x.attempts).concat(state.attempts).find(a=>a.id===p);if(!at)return;result={...at,pass:state.config.pass,passed:at.score>=state.config.pass,lessonCompleted:state.completed.includes(at.lessonId)};view='result';render();window.scrollTo(0,0);break}
+case 'rating':feedbackRating=Number(p);{let comment=$('#feedback-form textarea')?.value;render();if(comment)$('#feedback-form textarea').value=comment}break;
+case 'submit-profile':{let f=$('#profile-form');if(!f.reportValidity())return;let vals=Object.fromEntries(new FormData(f));if(state.users.some(u=>u.id!==state.activeStudentId&&u.email.toLowerCase()===vals.email.toLowerCase())){toast('This email is already used by another sample account.');return}state.profile={...state.profile,...vals};Object.assign(state.users.find(u=>u.email===f.dataset.oldEmail)||state.users[0],{name:vals.name,email:vals.email,studentId:vals.studentId,nationality:vals.nationality});save();render();toast('Profile updated.');break}
+case 'submit-feedback':{let f=$('#feedback-form');state.feedback.push({id:'fb-'+Date.now(),name:state.profile.name,userId:state.activeStudentId,date:today(),rating:feedbackRating,comment:new FormData(f).get('comment').trim(),status:'New'});save();render();toast('Thank you. Your feedback is saved for admin review.');break}
+case 'user-status':{let u=state.users.find(u=>u.id===p);openModal(u.status==='Active'?'Suspend sample account?':'Reactivate sample account?',`<p>${esc(u.name)} (${esc(u.email)}) will be ${u.status==='Active'?'blocked from demo sign-in':'allowed to use demo sign-in'}.</p><div class="actions">${btn('Cancel','close','secondary')}${btn('Confirm','confirm-user-status:'+u.id,u.status==='Active'?'danger':'')}</div>`);break}
+case 'confirm-user-status':{let u=state.users.find(u=>u.id===p);u.status=u.status==='Active'?'Suspended':'Active';save();closeModal();render();toast('Sample account is now '+u.status.toLowerCase()+'.');break}
+case 'user-detail':showStudentDetails(p);break;
+case 'content-tab':contentTab=p;render();break;
+case 'edit':openEditor(p,p2);break;
+case 'submit-editor':await submitEditor();break;
+case 'publish':{let c=collection(p),x=c.find(x=>x.id===p2);x.status=x.status==='Published'?'Unpublished':'Published';save();render();toast('Content is now '+x.status.toLowerCase()+'.');break}
+case 'delete':{let c=collection(p),x=p==='Categories'?c[Number(p2)]:c.find(x=>x.id===p2);openModal('Remove '+p.slice(0,-1)+'?',`<p>Remove <b>${esc(typeof x==='string'?x:x.title||x.malay)}</b> from the sample content? Linked records may require reassignment. You can reset the demo to restore seeded data.</p><div class="actions">${btn('Cancel','close','secondary')}${btn('Remove content','confirm-delete:'+p+':'+p2,'danger')}</div>`);break}
+case 'confirm-delete':{let c=collection(p);if((p==='Modules'||p==='Levels')&&c.length===1){toast('Keep at least one sample '+p.slice(0,-1).toLowerCase()+'.');return}if(p==='Categories'){let name=c[Number(p2)];if(state.phrases.some(x=>x.category===name)){toast('Reassign the phrases in this category before removing it.');return}c.splice(Number(p2),1)}else{if(p==='Levels'&&state.modules.some(m=>m.level===p2)||p==='Modules'&&(state.lessons.some(l=>l.moduleId===p2)||state.phrases.some(l=>l.moduleId===p2))||p==='Lessons'&&state.phrases.some(ph=>ph.lessonId===p2)){toast('Reassign or remove dependent content first. Unpublish to hide it immediately.');return}c.splice(c.findIndex(x=>x.id===p2),1)}save();closeModal();render();toast('Sample content removed.');break}
+case 'questions':questionsModal(p);break;
+case 'edit-question':questionEditor(p,Number(p2));break;
+case 'add-question':{let as=state.assessments.find(x=>x.id===p),key=as.type==='Placement'?'placement':as.moduleId;state.extraQuestions??={};state.extraQuestions[key]??=[];let id='custom-q-'+Date.now();state.extraQuestions[key].push({id,type:'Multiple choice',text:'New question: edit before publication',options:['Answer one','Answer two'],correct:0,explanation:'Add an approved explanation.',concept:key+'-vocabulary',points:1});save();questionsModal(p);toast('Question added. Edit its content before student use.');break}
+case 'remove-question':{let as=state.assessments.find(x=>x.id===p);if(makeQuestions(as.moduleId,as.type).length<=1){toast('Keep at least one question in this assessment.');return}state.removedQuestions??=[];state.removedQuestions.push(p2);save();questionsModal(p);toast('Question removed from subsequent attempts. Existing result evidence is retained.');break}
+case 'submit-question':{let f=$('#question-form');if(!f.reportValidity())return;let v=Object.fromEntries(new FormData(f)),isOptions=['Multiple choice','Listening'].includes(v.type),options=v.options.split('\n').map(x=>x.trim()).filter(Boolean),correct=isOptions?Number(v.correctOption)-1:v.correctText.trim();if(isOptions&&(options.length<2||options.length>4||correct<0||correct>=options.length)){ $('#question-error').textContent='Provide 2–4 options and select a valid correct option number.';return}if(!isOptions&&!correct){$('#question-error').textContent='Enter an expected answer for this question type.';return}if(v.type==='Listening'&&!v.audio.trim()){$('#question-error').textContent='Add the listening transcript.';return}state.questionEdits[f.dataset.id]={type:v.type,text:v.text,points:Number(v.points),correct,options:isOptions?options:undefined,words:v.type==='Sentence building'?correct.split(' '):undefined,audio:v.audio,concept:v.concept,explanation:v.explanation};save();closeModal();render();toast('Question saved. New attempts use the updated marking.');break}
+case 'preview-assessment':{let a=state.assessments.find(a=>a.id===p);if(a.status!=='Published'){toast('Publish this assessment before starting a scored preview.');return}startQuiz(a.moduleId,a.type,a.lessonId||null,a.id);break}
+case 'export-analytics':exportAnalytics();break;
+case 'submit-settings':{let f=$('#settings-form');if(!f.reportValidity())return;let v=Object.fromEntries(new FormData(f));for(let k in v)if(k!=='complete')v[k]=Number(v[k]);if(v.band1>=v.band2||v.pass>v.mastery){$('#settings-error').textContent='Connections minimum must exceed Everyday minimum, and mastery must be at least the pass score.';return}state.config=v;state.assessments.forEach(a=>{if(a.type!=='Placement')a.pass=v.pass});save();render();toast('Learning policy saved. Non-placement assessment pass marks updated.');break}
+case 'reset-demo':openModal('Reset prototype data?',`<p>This restores fictional accounts, assessments, rewards and content to their initial state on this device. Export any analytics you need first.</p><div class="actions">${btn('Cancel','close','secondary')}${btn('Reset all data','confirm-reset','danger')}</div>`);break;
+case 'confirm-reset':activeGame=null;state=seed();state.extraQuestions={};state.removedQuestions=[];initializeFrontendState();save();quiz=null;role='student';persistRole();view='dashboard';closeModal();render();toast('Sample data restored.');break;
+case 'auth-tab':authTab=p;render();break;
+case 'submit-auth':{let f=$('#auth-form');if(!f.reportValidity())return;let v=Object.fromEntries(new FormData(f)),email=v.email.toLowerCase().trim(),error=$('#auth-error');if(authTab==='register'){if(v.password!==v.confirm){error.textContent='Passwords do not match. Re-enter the confirmation.';return}if(state.users.some(u=>u.email.toLowerCase()===email)||email==='admin@malaymate.demo'){error.textContent='This email is already registered. Sign in or use a different sample email.';return}state.users.push({id:'u-'+Date.now(),name:v.name,email,studentId:v.studentId,nationality:v.nationality,role:'Student',level:'Foundation',status:'Active'});loadLearner(state.users.at(-1));role='student';save()}else{let u=state.users.find(u=>u.email.toLowerCase()===email);if(u?.status==='Suspended'){error.textContent='This account is suspended. Contact the administrator to reactivate it.';return}if(v.password!=='demo1234'||!u&&email!=='admin@malaymate.demo'){error.textContent='Email or password is incorrect. Use a listed sample account and demo1234.';return}role=email==='admin@malaymate.demo'?'admin':'student';if(u)loadLearner(u)}save();persistRole();view=role==='student'&&!state.onboardingDone?'onboarding':'dashboard';render();toast(role==='admin'?'Admin preview opened.':'You’re ready to start learning.');break}
+}}
+document.addEventListener('click',async e=>{let b=e.target.closest('[data-action]');if(b){e.preventDefault();await act(b.dataset.action)}});
+document.addEventListener('submit',e=>{e.preventDefault();let map={'profile-form':'submit-profile','feedback-form':'submit-feedback','auth-form':'submit-auth','editor-form':'submit-editor','settings-form':'submit-settings','question-form':'submit-question'};if(map[e.target.id])act(map[e.target.id])});
+document.addEventListener('input',e=>{let el=e.target;if(el.id==='written-answer'&&quiz)quiz.answers[quiz.questions[quiz.index].id]=el.value;if(el.id==='phrase-search'){searchPhrase=el.value;let start=el.selectionStart;render();$('#phrase-search').focus();$('#phrase-search').setSelectionRange(start,start)}if(el.id==='user-search')$('#user-results').innerHTML=userTable(el.value,$('#user-status').value);if(el.id==='content-search')$('#content-results').innerHTML=contentTable(el.value);});
+document.addEventListener('change',e=>{let el=e.target;if(el.id==='game-topic'){gameTopic=el.value;render()}if(el.id==='game-difficulty'){gameDifficulty=el.value;render()}if(el.id==='phrase-category'){phraseCategory=el.value;render()}if(el.id==='phrase-direction'){direction=el.value;render()}if(el.id==='user-status')$('#user-results').innerHTML=userTable($('#user-search').value,el.value);if(el.id.startsWith('analytics-'))$('#analytics-result').innerHTML=analyticsResult(filteredAttempts());if(el.id==='ml-scenario'){state.scenario=el.value;save();render()}if(el.dataset.feedback){state.feedback.find(f=>f.id===el.dataset.feedback).status=el.value;save();render();toast('Feedback review status updated.')}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!$('#modal').hidden)closeModal();else{$('.sidebar')?.classList.remove('open');syncNavigation();}}if(e.key==='Tab'&&!$('#modal').hidden){let nodes=[...$('#modal').querySelectorAll('button,input,select,textarea,a[href]')].filter(x=>!x.disabled),first=nodes[0],last=nodes.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}});
+render();

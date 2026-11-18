@@ -1,0 +1,7 @@
+import seed from './seed.json';import type{LearningState,Progress}from'./types';import{dateKey,starsFor}from'./adventure-data';
+const KEY='malaymate-w3-v1';export function readState():LearningState{let raw;try{raw=JSON.parse(localStorage.getItem(KEY)||'null');}catch{}const s=(raw||structuredClone(seed)) as unknown as LearningState;s.adventureProgress??={};return s;}
+export function updateState(update:(s:LearningState)=>void){const s=readState();update(s);localStorage.setItem(KEY,JSON.stringify(s));window.dispatchEvent(new Event('malaymate-update'));return s;}
+export function reward(s:LearningState,key:string,xp:number,label:string){if(s.events.some(e=>e.key===key))return 0;s.events.push({key,xp,label,date:dateKey()});if(!s.days.includes(dateKey()))s.days.push(dateKey());return xp;}
+export function finishSolo(levelId:string,correct:number){let earned=0;const s=updateState(s=>{const old=s.adventureProgress[levelId]||{best:0,stars:0,completed:false,attempts:0};s.adventureProgress[levelId]={best:Math.max(old.best,correct),stars:Math.max(old.stars,starsFor(correct)),completed:old.completed||correct>=3,attempts:old.attempts+1};if(correct>=3)earned=reward(s,'adventure:'+levelId,30,'3D adventure: '+levelId);});return {state:s,xp:earned};}
+export const xpTotal=(s:LearningState)=>s.events.reduce((n,e)=>n+Number(e.xp),0);
+export const progressOf=(s:LearningState,id:string):Progress=>s.adventureProgress[id]||{best:0,stars:0,completed:false,attempts:0};

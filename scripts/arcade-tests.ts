@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import {emptyStory,finishArcade,arcadeDailyModes,finishCampus,finishChapter,recordAnswer,validateStory} from '../src/adaptive';
+import {eligibleArcadePhrases,selectArcadePhrases,arcadeShuffle,wordTiles,wordsMatch} from '../src/arcade-data';
+import {CAMPUS_MISSIONS} from '../src/campus-data';
+let s=emptyStory();
+assert.equal(eligibleArcadePhrases(s).length,11,'Initial arcade respects chapter progression');
+const fullyUnlocked=emptyStory();for(const chapter of ['greetings','campus','food','shopping','directions','health','social','community'] as const)finishChapter(fullyUnlocked,chapter,3);
+assert.equal(eligibleArcadePhrases(fullyUnlocked).length,88,'Every chapter adds eight extra phrases and three story answers');
+for(const mode of ['memory','builder','listening'] as const){const selection=selectArcadePhrases(s,mode,123456);assert.equal(selection.length,mode==='memory'?3:4);assert.equal(new Set(selection.map(p=>p.id)).size,selection.length);assert.ok(selection.every(p=>p.skill==='greetings'));}
+assert.deepEqual(arcadeShuffle([1,2,3,4,5],20),arcadeShuffle([1,2,3,4,5],20));
+assert.deepEqual([...arcadeShuffle([1,2,3,4,5],20)].sort(),[1,2,3,4,5]);
+const tiles=wordTiles('Saya mahu nasi goreng',1);assert.equal(tiles.length,4);assert.ok(tiles.some((tile,i)=>tile.id!==i));
+assert.equal(wordsMatch('  Saya  mahu nasi goreng  ','Saya mahu nasi goreng'),true);assert.equal(wordsMatch('nasi goreng saya mahu','Saya mahu nasi goreng'),false);
+finishChapter(s,'greetings',2);assert.equal(eligibleArcadePhrases(s).length,22);
+assert.equal(eligibleArcadePhrases({...s,chapters:{...s.chapters,community:{completed:true,best:3,attempts:1,lastPlayed:''}}}).length,22,'Locked middle chapters remain locked');
+const day='2026-11-18';finishArcade(s,'memory',95,day);finishArcade(s,'builder',50,day);finishArcade(s,'listening',100,day);
+assert.deepEqual(arcadeDailyModes(s,day),['memory','builder','listening']);
+assert.deepEqual(arcadeDailyModes(s,'2026-11-19'),[]);
+finishArcade(s,'memory',70,day);assert.equal(s.arcade.memory?.plays,2);assert.equal(s.arcade.memory?.best,95);
+assert.equal(s.arcadeRuns.length,4);assert.deepEqual(validateStory(s),s);
+const oldBackup={version:1,skills:{},chapters:{},campus:{},history:[]};
+const upgraded=validateStory(oldBackup);assert.ok(upgraded);assert.deepEqual(upgraded.arcade,{});assert.deepEqual(upgraded.arcadeRuns,[]);
+assert.equal(CAMPUS_MISSIONS.length,3);assert.equal(new Set(CAMPUS_MISSIONS.map(m=>m.id)).size,3);
+for(const mission of CAMPUS_MISSIONS){assert.equal(mission.steps.length,3);for(const step of mission.steps){assert.equal(step.choices.length,3);assert.equal(new Set(step.choices).size,3);assert.equal(step.choices[step.correct],step.malay);assert.ok(step.english&&step.success&&step.help&&step.tip);}}
+finishCampus(s,'cafe',false,1);assert.equal(s.campus.cafe.completed,false);assert.equal(s.campus.cafe.bestScore,1);
+finishCampus(s,'cafe',true,2);assert.equal(s.campus.cafe.completed,true);assert.equal(s.campus.cafe.bestScore,2);
+finishCampus(s,'cafe',true,3);assert.equal(s.campus.cafe.bestScore,3);assert.equal(s.campus.cafe.attempts,3);
+recordAnswer(s,'food','quest:cafe:0',true);assert.equal(s.skills.food?.attempts,1);
+assert.equal(validateStory({version:1,skills:{},chapters:{},campus:{},arcadeRuns:[{mode:'not-a-mode',score:100,day}],history:[]})?.arcadeRuns.length,0);
+console.log('Passed: adaptive arcade content gating, deterministic tiles, three game modes, daily Triple Quest, backward compatible backup, and nine valid multi-turn campus NPC conversations.');

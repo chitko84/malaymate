@@ -1,0 +1,9 @@
+export type Route='start'|'welcome'|'home'|'learn'|'words'|'practice'|'progress'|'rewards'|'profile'|'feedback'|'placement'|'auth'|'games'|'campaign'|'adventure'|'multiplayer'|'room'|'quickgames'|'arcade'|'admin'|'story'|'campusquest'|'reviewlab';
+export interface Phrase{id:string;moduleId:string;malay:string;english:string;status:string;example?:string;audio?:string}
+export interface Level{id:string;name:string;place:string;description:string;color:string;icon:string;moduleId:string;phrases:[string,string][]}
+export interface Question{prompt:string;options:string[];correct:number;explanation:string;malay:string;english:string}
+export interface Progress{best:number;stars:number;completed:boolean;attempts:number}
+export interface RoomPlayer{id:string;name:string;ready:boolean;score:number;index:number;correct:number;left?:boolean}
+export interface RoomView{code:string;levelId:string;hostId:string;started:boolean;players:RoomPlayer[];expiresAt:number;finished:boolean;you:string;question:Pick<Question,'prompt'|'options'>|null;lastAnswer?:{correct:boolean;explanation:string}}
+export interface RoomSession{code:string;token:string;playerId:string}
+export interface LearningState{profile:{name:string;email:string;level:string;goal?:string};events:{key:string;xp:number;label:string;date:string}[];completed:string[];earned:string[];days:string[];badgeDefs:{id:string;title:string;description:string;emoji:string;active:boolean}[];attempts:{id:string;moduleId:string;score:number;date:string;type:string}[];modules:{id:string;title:string;status:string;level:string;description:string;emoji:string}[];phrases:Phrase[];adventureProgress:Record<string,Progress>;[key:string]:unknown}

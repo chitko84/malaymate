@@ -1,0 +1,13 @@
+node_modules/
+.sites-runtime/
+.wrangler/
+.env*
+*.tsbuildinfo
+outputs/
+
+dist/client/
+dist/server/
+dist/.openai/
+server/assets.generated.ts
+
+qa-responsive.html
